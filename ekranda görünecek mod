@@ -1,0 +1,36 @@
+int pulsePin = 0;                 // sensörün bulunduğu analog pin
+int blinkPin = 13;                // işaret ledinin bulunduğu yer
+
+
+volatile int BPM;                   // ham analog 0dan tutulan data int olarak her 2 ms de birgüncellenir 
+volatile int Signal;                // gelen ham verileri tutar
+volatile int IBI = 600;             // int that holds the time interval between beats! Must be seeded! 
+volatile boolean Pulse = false;     // başlangıç olarak sensörü kapatıyoruz
+volatile boolean QS = false;        // gelen değerin güvenilirliğini için
+
+void setup(){
+  pinMode(blinkPin,OUTPUT);         // pin that will blink to your heartbeat!
+  Serial.begin(57600);             // we agree to talk fast!
+  interruptSetup();
+                  // sets up to read Pulse Sensor signal every 2mS 
+   // IF YOU ARE POWERING The Pulse Sensor AT VOLTAGE LESS THAN THE BOARD VOLTAGE, 
+   // UN-COMMENT THE NEXT LINE AND APPLY THAT VOLTAGE TO THE A-REF PIN
+//   analogReference(EXTERNAL);   
+}
+
+//  Where the Magic Happens
+
+void loop(){
+      
+  if (QS == true){     // A Heartbeat Was Found
+                       // BPM and IBI have been Determined
+                       // Quantified Self "QS" true when arduino finds a heartbeat
+    Serial.print("*** Heart-Beat Happened *** ");  //ASCII Art Madness
+    Serial.print("BPM: ");
+    Serial.print(BPM);
+    Serial.println("  ");
+        QS = false;                      // reset the Quantified Self flag for next time    
+  }
+     
+  delay(5);                             //  take a break
+}

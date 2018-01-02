@@ -1,0 +1,101 @@
+volatile int rate[10];                    // geçici son 10 değeri tutar
+volatile unsigned long sampleCounter = 0;          // darbe zamanlamasını belirlemek için kullanılan örnek sayaç
+volatile unsigned long lastBeatTime = 0;           //son çarptığı zaman
+volatile int P =512;                      // nabız dalgasında en yükseği bulmak için verilen değer
+volatile int T = 512;                     // nabız dalgasında en düşük değeri bulmak için verilen değer
+volatile int thresh = 525;                // anlık kalp ritmini bulmak için kullanılır
+volatile int amp = 100;                   // nabız dalga genliğini tutmak için kullanılır
+volatile boolean firstBeat = true;        // ilk diziyi değerlendirmek için kullanılır  BPM
+volatile boolean secondBeat = false;      // ikinci diziyi değerlendirmek için kullanılır BPM
+
+
+void interruptSetup(){     
+  // Initializes Timer2 to throw an interrupt every 2mS.
+  TCCR2A = 0x02;     // DISABLE PWM ON DIGITAL PINS 3 AND 11, AND GO INTO CTC MODE
+  TCCR2B = 0x06;     // DON'T FORCE COMPARE, 256 PRESCALER 
+  OCR2A = 0X7C;      // SET THE TOP OF THE COUNT TO 124 FOR 500Hz SAMPLE RATE
+  TIMSK2 = 0x02;     // ENABLE INTERRUPT ON MATCH BETWEEN TIMER2 AND OCR2A
+  sei();             // MAKE SURE GLOBAL INTERRUPTS ARE ENABLED      
+} 
+
+
+// THIS IS THE TIMER 2 INTERRUPT SERVICE ROUTINE. //ikinci zamanlayıcı rutin kesme hizmeti 
+// Timer 2 makes sure that we take a reading every 2 miliseconds  //zmanalayıcı 2 her 2milisaniyede bir okumaya karar verir
+ISR(TIMER2_COMPA_vect){                         // zamanlayıcı 2 124 olarak sayıldığında tetiklenir   
+  cli();                                      // bunu yaparken kesmeleri devre dışı bırak
+  Signal = analogRead(pulsePin);              // analog olarak okuma yeri 
+  sampleCounter += 2;                         // örnek sayacı 2 mili saniye arttır
+  int N = sampleCounter - lastBeatTime;       // son çarptığı zamandan ilk çarptığı zamandaki örnek sayacın çıkartılması
+
+    //  nabızın tepe ve çukur noktasını bulma
+  if(Signal < thresh && N > (IBI/5)*3){       // avoid dichrotic noise by waiting 3/5 of last IBI
+    if (Signal < T){                        // signal tden küçük ise
+      T = Signal;                         // nabız dalgasındaki en küçük noktayı takip et
+  }
+
+  if(Signal > thresh && Signal > P){          
+    P = Signal;                             // p en yüksek değer yapar
+  }                                       
+
+  
+  if (N > 250){                                   // yüksek frekansı önleme
+    if ( (Signal > thresh) && (Pulse == false) && (N > (IBI/5)*3) ){        
+      Pulse = true;                               // nabız gelmeye çalıştığında 
+      digitalWrite(blinkPin,HIGH);                // ledi yak
+      IBI = sampleCounter - lastBeatTime;         // atımlar arasındaki süreyi ms cinsinden ölçer
+      lastBeatTime = sampleCounter;               // bir sonraki atım için zamanı takip et
+
+      if(secondBeat){                        // eğer bu ikinci vuruş ise, if secondBeat == TRUE
+        secondBeat = false;                  //ikinci vuruşu kapat
+        for(int i=0; i<=9; i++){             // başlangıçta gerçekçi bir değer elde etmek için  
+        
+          rate[i] = IBI;                      //i değişkeninin içine depola
+        }
+      }
+
+      if(firstBeat){                         // eğer ilk vuruş ise , if firstBeat == TRUE
+        firstBeat = false;                   //ilk vuruşmu diye kontrol ediyoruz
+        secondBeat = true;                   // ikinci vuruşmu diye kontrol ediyoruz
+        sei();                               // kesmeleri tekrar etkinleştir
+        return;                              // güvenilmez değer
+      }   
+
+
+      
+      word runningTotal = 0;                  // toplam değişkeni sil   
+
+      for(int i=0; i<=8; i++){                // 10 tane kaydedilen değerden birini kaydedip diğer değişken eklemayi yapıyor
+        rate[i] = rate[i+1];                  // 
+        runningTotal += rate[i];              // 
+      }
+
+      rate[9] = IBI;                          // en son oranı diziye ekle
+      runningTotal += rate[9];                // bulunan dğeri toplam değerler içine ekleme
+      runningTotal /= 10;                     // son 10 tanesinin ortalamasını alır
+      BPM = 60000/runningTotal;               // toplam değeri 1 dakika içine bölme
+      QS = true;                              // güvenilir değer
+      // 
+    }                       
+  }
+
+  if (Signal < thresh && Pulse == true){   // değer yok ise
+    digitalWrite(blinkPin,LOW);            // 13. ledi kapat
+    Pulse = false;                         // sensörü kapat
+    amp = P - T;                           // değerleri sıfırla
+    thresh = amp/2 + T;                    // gelinliğin 
+    P = thresh;                            // beklemede
+    T = thresh;
+  }
+
+  if (N > 2500){                           // 
+    thresh = 512;                          // 2.5 saniye bekler eğer bir işaret gelmezse değerleri eski haline alır
+    P = 512;                               // 
+    T = 512;                               // 
+    lastBeatTime = sampleCounter;          //        
+    firstBeat = true;                      // ilk nabızı bekliyor
+    secondBeat = false;                    // ikinci nabız kapalı
+  }
+
+  sei();                                   // işiniz bittiğinde kesmeleri etkinleştirmek
+}
+}
